@@ -1,4 +1,4 @@
-const V = 'diario-v2';
+const V = 'diario-v3';
 const HOSTS = ['www.gstatic.com', 'fonts.googleapis.com', 'fonts.gstatic.com'];
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', e => e.waitUntil(

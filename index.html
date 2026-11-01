@@ -6,7 +6,6 @@
 <title>Diario</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#DCD1BA">
-<link rel="icon" type="image/svg+xml" href="icon.svg">
 <link rel="icon" type="image/png" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -51,6 +50,8 @@ button:disabled{opacity:.5;cursor:default}
 .chip.add,.chip.add:hover{background:none;border:1px dashed var(--line);border-radius:99px;font-family:var(--serif);font-size:.9rem;padding:2px 12px;color:var(--mute)}
 .chip.add:hover{border-color:var(--mute);color:var(--ink)}
 #nti{font-size:.95rem;padding:2px 4px}
+.titin{font:italic 500 1.5rem/1.3 var(--serif);border-bottom:1px solid var(--line);margin-bottom:8px}
+.tit{font:italic 500 1.5rem/1.3 var(--serif);margin:0 0 6px}
 .gl{list-style:none;padding:0;margin:10px 0 0;max-width:520px}
 .gl li{display:flex;gap:12px;align-items:center;padding:6px 0;border-bottom:1px solid var(--rule)}
 .gl .hint{margin-right:auto}.gl button{font-size:.85rem;padding:3px 10px}
@@ -188,6 +189,7 @@ async function iniciar(){
     const hoy = new Date();
     root.innerHTML = `<header><h1>Diario</h1><button id="out">Salir</button></header>
       <section class="e nw"><time>${hoy.toLocaleDateString('es', {weekday:'long'})}<br>${hoy.toLocaleDateString('es', {day:'numeric', month:'long'})}</time><div>
+      <input id="tit" class="titin" placeholder="Título del día (opcional)" aria-label="Título del día" maxlength="80" autocomplete="off">
       <textarea id="nuevo" placeholder="Escribe lo que quieras…" aria-label="Nueva entrada"></textarea>
       <div class="bar"><span id="ann" class="bar" style="margin:0;gap:2px"></span></div>
       <div class="bar" id="pick" role="group" aria-label="Etiquetas"></div>
@@ -206,7 +208,7 @@ async function iniciar(){
 
     const rn = () => { $('#ann').innerHTML = animoBtns(nu.animo, 'n'); $('#fv').innerHTML = fotosHTML(nu.fotos, true); };
     const limpia = x => String(x).replace(/,/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase().slice(0, 40);
-    const allTags = () => { const c = new Set(etq); todas.forEach(e => (e.tags || []).forEach(t => c.add(t))); return [...c].sort((a, b) => a.localeCompare(b, 'es')); };
+    const allTags = () => { const c = new Set(etq); todas.forEach(e => (e.tags || []).forEach(t => c.add(t))); nu.tags.forEach(t => c.add(t)); if(editId !== null && eb.tags) eb.tags.forEach(t => c.add(t)); return [...c].sort((a, b) => a.localeCompare(b, 'es')); };
     const chipsPicker = (st, c) => allTags().map(t => `<button type="button" class="chip${st.includes(t) ? ' on' : ''}" data-pt="${esc(t)}" data-c="${c}">${esc(t)}</button>`).join('')
       + (adding === c ? `<input id="nti" data-c="${c}" placeholder="nueva etiqueta" aria-label="Nueva etiqueta" maxlength="40" style="width:11em">`
         : `<button type="button" class="chip add" data-addt data-c="${c}">＋ etiqueta</button>`);
@@ -226,7 +228,7 @@ async function iniciar(){
       if(adding !== c) return; adding = null;
       const t = limpia(v);
       if(t){
-        if(!allTags().includes(t)){ etq = [...etq, t]; F.setDoc(LR, {lista: F.arrayUnion(t)}, {merge: true}).catch(error); }
+        if(!allTags().includes(t)){ etq = [...etq, t]; F.setDoc(LR, {lista: F.arrayUnion(t)}, {merge: true}).catch(x => { $('#err').textContent = x.code === 'permission-denied' ? 'La etiqueta se guardará con la entrada, pero no se pudo añadir a la lista: falta publicar las reglas nuevas de Firestore (archivo reglas-firestore.txt).' : 'Algo falló: ' + (x.code || x.message); }); }
         const a = c === 'n' ? nu.tags : eb.tags; if(!a.includes(t)) a.push(t);
       }
       rp(c); tg();
@@ -265,7 +267,7 @@ async function iniciar(){
       g.innerHTML = ts.length ? '<ul class="gl">' + ts.map(t => `<li><span class="chip">${esc(t)}</span><span class="hint">${cn[t] || 0} ${cn[t] === 1 ? 'entrada' : 'entradas'}</span><button data-rn="${esc(t)}">Renombrar</button><button data-dl="${esc(t)}">Borrar</button></li>`).join('') + '</ul>'
         : '<p class="hint">Aún no hay etiquetas. Crea la primera con «＋ etiqueta» al escribir.</p>';
     }
-    const act = () => { $('#act').innerHTML = solo || dia ? `Mostrando ${solo ? 'una entrada al azar' : 'el ' + dl(dia)} <button id="qd">Quitar</button>` : ''; };
+    const act = () => { const p = []; if(solo) p.push('una entrada al azar'); else { if(dia) p.push('el ' + dl(dia)); if(sel.size) p.push('entradas con ' + [...sel].map(esc).join(' o ')); } $('#act').innerHTML = p.length ? `Mostrando ${p.join(', ')} <button id="qd">Quitar</button>` : ''; };
 
     function cal(){
       const c = $('#cal'); if(!vc){ c.innerHTML = ''; return; }
@@ -294,9 +296,9 @@ async function iniciar(){
       const d = new Date(e.creada);
       const f = d.toLocaleDateString('es', {day:'numeric', month:'short', year:'numeric'}), h = d.toLocaleTimeString('es', {hour:'2-digit', minute:'2-digit'});
       const fecha = `<time datetime="${d.toISOString()}">${f}<br>${h}${e.editada ? '<br>(editada)' : ''}${e.fija ? '<br>Fijada' : ''}</time>`;
-      if(e.id === editId) return `<article class="e" data-id="${e.id}">${fecha}<div><textarea id="ed" aria-label="Editar entrada">${esc(eb.texto)}</textarea><div class="bar"><span>${animoBtns(eb.animo, 'e')}</span></div><div class="bar" id="pe" role="group" aria-label="Etiquetas">${chipsPicker(eb.tags, 'e')}</div><div class="f">${fotosHTML(eb.fotos, true)}</div><div class="acts"><button class="main" data-a="ok">Guardar cambios</button><button data-a="no">Cancelar</button></div></div></article>`;
+      if(e.id === editId) return `<article class="e" data-id="${e.id}">${fecha}<div><input id="edti" class="titin" value="${esc(eb.titulo || '')}" placeholder="Título del día (opcional)" aria-label="Título del día" maxlength="80" autocomplete="off"><textarea id="ed" aria-label="Editar entrada">${esc(eb.texto)}</textarea><div class="bar"><span>${animoBtns(eb.animo, 'e')}</span></div><div class="bar" id="pe" role="group" aria-label="Etiquetas">${chipsPicker(eb.tags, 'e')}</div><div class="f">${fotosHTML(eb.fotos, true)}</div><div class="acts"><button class="main" data-a="ok">Guardar cambios</button><button data-a="no">Cancelar</button></div></div></article>`;
       const tags = (e.tags || []).map(t => `<button class="chip" data-t="${esc(t)}">${esc(t)}</button>`).join(' ');
-      return `<article class="e${fresh.has(e.id) ? ' nueva' : ''}" data-id="${e.id}">${fecha}<div>${e.animo ? `<span class="mood" style="color:${CO[e.animo - 1]}" title="Ánimo: ${LB[e.animo - 1]}">${AN[e.animo - 1]}</span>` : ''}<div class="txt">${link(e.texto)}</div><div class="f">${fotosHTML(e.fotos || [], false)}</div>${tags ? `<div class="bar">${tags}</div>` : ''}<div class="acts"><button data-a="fav" aria-label="Favorita">${e.fav ? '★' : '☆'}</button><button data-a="fija">${e.fija ? 'Desfijar' : 'Fijar arriba'}</button><button data-a="ed">Editar</button><button data-a="del">Borrar</button></div></div></article>`;
+      return `<article class="e${fresh.has(e.id) ? ' nueva' : ''}" data-id="${e.id}">${fecha}<div>${e.titulo ? `<h2 class="tit">${esc(e.titulo)}</h2>` : ''}${e.animo ? `<span class="mood" style="color:${CO[e.animo - 1]}" title="Ánimo: ${LB[e.animo - 1]}">${AN[e.animo - 1]}</span>` : ''}<div class="txt">${link(e.texto)}</div><div class="f">${fotosHTML(e.fotos || [], false)}</div>${tags ? `<div class="bar">${tags}</div>` : ''}<div class="acts"><button data-a="fav" aria-label="Favorita">${e.fav ? '★' : '☆'}</button><button data-a="fija">${e.fija ? 'Desfijar' : 'Fijar arriba'}</button><button data-a="ed">Editar</button><button data-a="del">Borrar</button></div></div></article>`;
     }
 
     function lista(){
@@ -307,7 +309,7 @@ async function iniciar(){
         if(sel.size && !(e.tags || []).some(t => sel.has(t))) return false;
         if(an && e.animo != an) return false;
         if(dia && dk(e.creada) !== dia) return false;
-        const n = norm(e.texto + ' ' + (e.tags || []).join(' '));
+        const n = norm((e.titulo || '') + ' ' + e.texto + ' ' + (e.tags || []).join(' '));
         return ws.every(w => n.includes(w));
       }).sort((a, b) => (b.fija ? 1 : 0) - (a.fija ? 1 : 0) || b.creada - a.creada);
       $('#lista').innerHTML = f.length ? f.map(fila).join('')
@@ -316,16 +318,17 @@ async function iniciar(){
     const todo = () => { tg(); cal(); gra(); gest(); act(); lista(); };
 
     function guardar(){
-      const t = $('#nuevo').value.trim();
-      if(!t && !nu.fotos.length) return;
+      const t = $('#nuevo').value.trim(), ti = $('#tit').value.trim();
+      if(!t && !ti && !nu.fotos.length) return;
       if(JSON.stringify(nu.fotos).length > 800000){ $('#err').textContent = 'Las fotos pesan demasiado juntas. Quita alguna.'; return; }
-      const d = {texto: t, creada: Date.now(), tags: [...nu.tags], animo: nu.animo, fotos: nu.fotos, fav: false, fija: false};
-      $('#nuevo').value = ''; nu = {animo: null, fotos: [], tags: []}; adding = null; $('#err').textContent = ''; rn(); rp('n');
-      F.addDoc(C, d).catch(e => { $('#nuevo').value = t; error(e); });
+      const d = {titulo: ti, texto: t, creada: Date.now(), tags: [...nu.tags], animo: nu.animo, fotos: nu.fotos, fav: false, fija: false};
+      $('#nuevo').value = ''; $('#tit').value = ''; nu = {animo: null, fotos: [], tags: []}; adding = null; $('#err').textContent = ''; rn(); rp('n');
+      F.addDoc(C, d).catch(e => { $('#nuevo').value = t; $('#tit').value = ti; error(e); });
     }
 
     rn(); rp('n');
     $('#gu').onclick = guardar;
+    $('#tit').addEventListener('keydown', e => { if(e.key === 'Enter'){ e.preventDefault(); $('#nuevo').focus(); } });
     $('#pick').addEventListener('click', clickPick);
     $('#pick').addEventListener('keydown', kdPick);
     $('#lista').addEventListener('keydown', kdPick);
@@ -370,14 +373,14 @@ async function iniciar(){
     $('#q').addEventListener('input', e => { q = e.target.value; lista(); });
     $('#bf').onclick = () => { fav = !fav; $('#bf').classList.toggle('on', fav); lista(); };
     $('#sa').onchange = e => { an = e.target.value; lista(); };
-    $('#act').addEventListener('click', e => { if(e.target.id === 'qd'){ solo = ''; dia = ''; todo(); } });
+    $('#act').addEventListener('click', e => { if(e.target.id === 'qd'){ solo = ''; dia = ''; sel.clear(); todo(); } });
     $('#tags').addEventListener('click', e => { if(e.target.closest('[data-limpia]')){ sel.clear(); todo(); return; } const t = e.target.closest('[data-t]'); if(t){ toggle(t.dataset.t); todo(); } });
     $('#cal').addEventListener('click', e => {
       const m = e.target.closest('[data-m]'), d = e.target.closest('[data-d]');
       if(m){ mes.setMonth(mes.getMonth() + +m.dataset.m); cal(); }
       if(d){ dia = dia === d.dataset.d ? '' : d.dataset.d; solo = ''; todo(); }
     });
-    $('#lista').addEventListener('input', e => { if(e.target.id === 'ed') eb.texto = e.target.value; });
+    $('#lista').addEventListener('input', e => { if(e.target.id === 'ed') eb.texto = e.target.value; if(e.target.id === 'edti') eb.titulo = e.target.value; });
     $('#lista').addEventListener('click', e => {
       const im = e.target.closest('.f img'); if(im){ im.classList.toggle('big'); return; }
       if(clickPick(e)) return;
@@ -388,12 +391,12 @@ async function iniciar(){
       const id = b.closest('article').dataset.id, en = todas.find(x => x.id === id), a = b.dataset.a, ref = F.doc(C, id);
       if(a === 'fav') F.updateDoc(ref, {fav: !en.fav}).catch(error);
       else if(a === 'fija') F.updateDoc(ref, {fija: !en.fija}).catch(error);
-      else if(a === 'ed'){ editId = id; adding = null; eb = {texto: en.texto, tags: [...(en.tags || [])], animo: en.animo || null, fotos: [...(en.fotos || [])]}; lista(); const x = $('#ed'); if(x) x.focus(); }
+      else if(a === 'ed'){ editId = id; adding = null; eb = {titulo: en.titulo || '', texto: en.texto, tags: [...(en.tags || [])], animo: en.animo || null, fotos: [...(en.fotos || [])]}; lista(); const x = $('#ed'); if(x) x.focus(); }
       else if(a === 'no'){ editId = null; adding = null; lista(); }
       else if(a === 'ok'){
-        const tx = eb.texto.trim();
-        if(!tx && !eb.fotos.length) return;
-        F.updateDoc(ref, {texto: tx, tags: [...eb.tags], animo: eb.animo, fotos: eb.fotos, editada: Date.now()}).catch(error);
+        const tx = eb.texto.trim(), ti = (eb.titulo || '').trim();
+        if(!tx && !ti && !eb.fotos.length) return;
+        F.updateDoc(ref, {titulo: ti, texto: tx, tags: [...eb.tags], animo: eb.animo, fotos: eb.fotos, editada: Date.now()}).catch(error);
         editId = null; adding = null; todo();
       }
       else if(a === 'del'){ if(confirm('¿Borrar esta entrada? No se puede deshacer.')) F.deleteDoc(ref).catch(error); }
