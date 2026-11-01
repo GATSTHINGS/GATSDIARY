@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Diario</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#1D6B66">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+:root{--bg:#F5F6F3;--ink:#1D2A31;--mute:#667579;--line:#D8DEDA;--acc:#1D6B66;--acc-ink:#fff;--field:#fff;--err:#B3402F}
+@media(prefers-color-scheme:dark){:root{--bg:#12181B;--ink:#E4EAE8;--mute:#8A9A9E;--line:#26323A;--acc:#5DB5AD;--acc-ink:#0D1517;--field:#182126;--err:#F0907F}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:720px;margin:0 auto;padding:24px 16px 80px}
+header{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:20px}
+h1{font:600 1.6rem Georgia,"Iowan Old Style",serif;margin:0}
+textarea,input,select{font:inherit;color:inherit;background:var(--field);border:1px solid var(--line);border-radius:8px;padding:10px 12px;width:100%}
+select{width:auto;padding:6px 10px}
+textarea{min-height:120px;resize:vertical;font-family:Georgia,"Iowan Old Style",serif;font-size:1.05rem;line-height:1.6}
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+button,.btn{font:inherit;cursor:pointer;border-radius:8px;padding:8px 14px;border:1px solid var(--line);background:transparent;color:var(--ink);display:inline-block}
+button.main{background:var(--acc);color:var(--acc-ink);border-color:var(--acc);font-weight:600}
+button:disabled{opacity:.5;cursor:default}
+.row{display:flex;gap:10px;align-items:center;justify-content:space-between;margin-top:8px;flex-wrap:wrap}
+.bar{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0;align-items:center}
+.hint{color:var(--mute);font-size:.85rem}
+.err{color:var(--err);min-height:1.2em;margin:8px 0 0}
+.chip{border-radius:99px;padding:2px 10px;font-size:.85rem}
+.chip.on{background:var(--acc);color:var(--acc-ink);border-color:var(--acc)}
+.an{padding:2px 8px;font-size:1.25rem}.an.sel{border-color:var(--acc);box-shadow:0 0 0 2px var(--acc)}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;max-width:340px}
+.cal button{padding:6px 0;border:none;position:relative;font-size:.85rem}
+.cal button.on{outline:2px solid var(--acc)}
+.cal i{position:absolute;left:50%;bottom:2px;width:6px;height:6px;margin-left:-3px;border-radius:50%}
+.e{display:grid;grid-template-columns:120px 1fr;gap:4px 20px;padding:18px 0;border-top:1px solid var(--line)}
+.e time{color:var(--mute);font-size:.85rem;padding-top:.3rem}
+.txt{font-family:Georgia,"Iowan Old Style",serif;font-size:1.05rem;line-height:1.65;white-space:pre-wrap;overflow-wrap:anywhere}
+.f{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.f img{height:90px;border-radius:6px;cursor:zoom-in}.f img.big{height:auto;max-width:100%;cursor:zoom-out}
+.acts{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
+.acts button{border:none;padding:2px 6px;color:var(--mute);font-size:.85rem}
+.acts button:hover{color:var(--ink)}
+.acts button.main{color:var(--acc-ink);padding:6px 14px;font-size:.95rem}
+a{color:var(--acc)}
+pre{background:var(--field);border:1px solid var(--line);border-radius:8px;padding:12px;overflow-x:auto;font-size:.85rem}
+.centro{max-width:420px;margin:12vh auto 0}
+@media(max-width:560px){.e{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<main id="app"></main>
+<script type="module">
+let firebaseConfig = {};
+try { firebaseConfig = (await import('./config.js')).default || {}; } catch(e) {}
+
+const $ = s => document.querySelector(s);
+const root = $('#app');
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const norm = s => String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+const link = t => esc(t).replace(/(https?:\/\/[^\s<]*[^\s<.,;:!?)\]])/g, u => `<a href="${u}" target="_blank" rel="noopener noreferrer">${u}</a>`);
+const pt = s => [...new Set(s.split(',').map(x => x.trim().toLowerCase()).filter(Boolean))];
+const dk = ts => { const d = new Date(ts); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); };
+const dl = k => { const [y, m, d] = k.split('-'); return new Date(y, m - 1, d).toLocaleDateString('es', {day:'numeric', month:'long', year:'numeric'}); };
+const AN = ['😞','🙁','😐','🙂','😄'], CO = ['#C0553F','#D89048','#9AA3A6','#6FAF86','#2F9E7B'];
+const avg = v => v.reduce((s, x) => s + x, 0) / v.length;
+const animoBtns = (sel, ctx) => AN.map((e, i) => `<button type="button" class="an${sel === i + 1 ? ' sel' : ''}" data-an="${i + 1}" data-ctx="${ctx}" aria-label="Ánimo ${i + 1} de 5">${e}</button>`).join('');
+const fotosHTML = (fs, x) => fs.map((s, i) => `<span><img src="${s}" alt="Foto">${x ? `<button type="button" data-qf="${i}" aria-label="Quitar foto">✕</button>` : ''}</span>`).join('');
+
+function comprimir(file){
+  return new Promise((ok, ko) => {
+    const r = new FileReader();
+    r.onload = () => { const i = new Image(); i.onload = () => {
+      const k = Math.min(1, 900 / Math.max(i.width, i.height)), c = document.createElement('canvas');
+      c.width = i.width * k; c.height = i.height * k; c.getContext('2d').drawImage(i, 0, 0, c.width, c.height);
+      ok(c.toDataURL('image/jpeg', .6)); }; i.onerror = ko; i.src = r.result; };
+    r.onerror = ko; r.readAsDataURL(file);
+  });
+}
+
+function guia(){
+  root.innerHTML = `<header><h1>Diario</h1></header>
+  <p>Esta página todavía no está conectada a Firebase. Falta el archivo <b>config.js</b> con los datos de tu proyecto. Pásaselos a Claude en el chat y él te devuelve el archivo listo.</p>`;
+}
+
+async function iniciar(){
+  let F;
+  try{
+    const b = 'https://www.gstatic.com/firebasejs/12.19.0/';
+    const [a, au, fs] = await Promise.all([import(b+'firebase-app.js'), import(b+'firebase-auth.js'), import(b+'firebase-firestore.js')]);
+    F = {...a, ...au, ...fs};
+  }catch(e){
+    root.innerHTML = `<p class="err">No se pudo cargar Firebase (fallo de red o una extensión lo bloquea). ${esc(e.message || '')}</p>`;
+    return;
+  }
+  const app = F.initializeApp(firebaseConfig);
+  const auth = F.getAuth(app);
+  let db;
+  try{ db = F.initializeFirestore(app, {localCache: F.persistentLocalCache({tabManager: F.persistentMultipleTabManager()})}); }
+  catch(e){ db = F.getFirestore(app); }
+  let unsub = null;
+  F.onAuthStateChanged(auth, u => { if(unsub){ unsub(); unsub = null; } u ? diario(u) : acceso(); });
+
+  function acceso(){
+    root.innerHTML = `<div class="centro"><h1>Diario</h1>
+      <p>Un lugar privado para escribir cuando quieras. No hay días obligatorios.</p>
+      <button class="main" id="in">Entrar con Google</button><p class="err" id="err" role="alert"></p></div>`;
+    $('#in').onclick = async () => {
+      try{ await F.signInWithPopup(auth, new F.GoogleAuthProvider()); }
+      catch(e){
+        const m = {
+          'auth/unauthorized-domain': 'Esta dirección no está autorizada. En Firebase: Authentication → Configuración → Dominios autorizados, agrega la dirección de esta página.',
+          'auth/operation-not-allowed': 'El acceso con Google no está activado. En Firebase: Authentication → Método de acceso.',
+          'auth/popup-blocked': 'El navegador bloqueó la ventana de Google. Permite ventanas emergentes para esta página.',
+          'auth/popup-closed-by-user': 'Cerraste la ventana antes de terminar. Inténtalo de nuevo.'
+        };
+        $('#err').textContent = m[e.code] || ('No se pudo entrar: ' + (e.code || e.message));
+      }
+    };
+  }
+
+  function diario(u){
+    const C = F.collection(db, 'usuarios', u.uid, 'entradas');
+    let todas = [], q = '', tag = '', fav = false, an = '', dia = '', solo = '', editId = null, eb = {}, nu = {animo: null, fotos: []}, mes = new Date(), vc = false, va = false;
+    mes.setDate(1);
+    root.innerHTML = `<header><h1>Diario</h1><button id="out">Salir</button></header>
+      <textarea id="nuevo" placeholder="Escribe lo que quieras…" aria-label="Nueva entrada"></textarea>
+      <div class="bar"><span id="ann"></span><input id="nt" placeholder="Etiquetas, separadas por comas" aria-label="Etiquetas" style="flex:1;min-width:180px"></div>
+      <div class="bar"><label class="btn">Añadir fotos<input id="fo" type="file" accept="image/*" multiple hidden></label><span id="fv" class="f"></span></div>
+      <div class="row"><span class="hint">Ctrl + Enter también guarda</span><button class="main" id="gu">Guardar entrada</button></div>
+      <p class="err" id="err" role="alert"></p>
+      <div class="bar" style="margin-top:24px"><button id="bc">Calendario</button><button id="ba">Gráfico de ánimo</button><button id="bz">Entrada al azar</button><button id="bk">Descargar copia</button><button id="bd">Copia en Drive</button></div>
+      <div id="cal"></div><div id="gra"></div>
+      <input id="q" type="search" placeholder="Buscar en tus entradas" aria-label="Buscar en tus entradas">
+      <div class="bar"><button class="chip" id="bf">★ Favoritas</button><select id="sa" aria-label="Filtrar por ánimo"><option value="">Ánimo: todos</option>${AN.map((e, i) => `<option value="${i + 1}">${e}</option>`).join('')}</select><span id="tags" class="bar" style="margin:0"></span></div>
+      <p id="act" class="hint"></p><div id="lista"></div>`;
+
+    const error = e => { $('#err').textContent = e.code === 'permission-denied'
+      ? 'No tienes permiso para leer o escribir. O esta cuenta no es la autorizada, o las reglas de Firestore no están publicadas.'
+      : 'Algo falló: ' + (e.code || e.message); };
+
+    const rn = () => { $('#ann').innerHTML = animoBtns(nu.animo, 'n'); $('#fv').innerHTML = fotosHTML(nu.fotos, true); };
+    const tg = () => { const c = {}; todas.forEach(e => (e.tags || []).forEach(t => c[t] = 1));
+      $('#tags').innerHTML = Object.keys(c).sort().map(t => `<button class="chip${tag === t ? ' on' : ''}" data-t="${esc(t)}">${esc(t)}</button>`).join(''); };
+    const act = () => { $('#act').innerHTML = solo || dia ? `Mostrando ${solo ? 'una entrada al azar' : 'el ' + dl(dia)} <button id="qd">Quitar</button>` : ''; };
+
+    function cal(){
+      const c = $('#cal'); if(!vc){ c.innerHTML = ''; return; }
+      const y = mes.getFullYear(), m = mes.getMonth(), n = new Date(y, m + 1, 0).getDate(), o = (new Date(y, m, 1).getDay() + 6) % 7, mp = {};
+      todas.forEach(e => { const k = dk(e.creada); (mp[k] = mp[k] || []).push(e.animo); });
+      let h = `<div class="row" style="max-width:340px"><button data-m="-1" aria-label="Mes anterior">‹</button><strong>${mes.toLocaleDateString('es', {month:'long', year:'numeric'})}</strong><button data-m="1" aria-label="Mes siguiente">›</button></div><div class="cal">` + 'LMXJVSD'.split('').map(x => `<span class="hint" style="text-align:center">${x}</span>`).join('') + '<span></span>'.repeat(o);
+      for(let d = 1; d <= n; d++){
+        const k = y + '-' + (m + 1) + '-' + d, a = mp[k]; let cc = '';
+        if(a){ const v = a.filter(Boolean); cc = v.length ? CO[Math.round(avg(v)) - 1] : 'var(--mute)'; }
+        h += `<button data-d="${k}" class="${dia === k ? 'on' : ''}">${d}${a ? `<i style="background:${cc}"></i>` : ''}</button>`;
+      }
+      c.innerHTML = h + '</div><p class="hint">Un punto marca los días con entradas; su color es el ánimo promedio.</p>';
+    }
+
+    function gra(){
+      const g = $('#gra'); if(!va){ g.innerHTML = ''; return; }
+      const mp = {}; todas.forEach(e => { if(e.animo){ const k = dk(e.creada); (mp[k] = mp[k] || []).push(e.animo); } });
+      const lim = Date.now() - 90 * 864e5;
+      const p = Object.entries(mp).map(([k, v]) => { const [y, m, d] = k.split('-'); return {t: new Date(y, m - 1, d).getTime(), v: avg(v)}; }).filter(x => x.t >= lim).sort((a, b) => a.t - b.t);
+      if(p.length < 2){ g.innerHTML = '<p class="hint">Aún hay pocos días con ánimo anotado para dibujar una línea.</p>'; return; }
+      const t0 = p[0].t, t1 = p[p.length - 1].t, X = t => 30 + (t1 === t0 ? 0 : (t - t0) / (t1 - t0)) * 540, Y = v => 100 - (v - 1) * 22;
+      g.innerHTML = `<svg viewBox="0 0 600 120" width="100%" role="img" aria-label="Ánimo promedio por día, últimos 90 días"><text x="0" y="18" font-size="14">😄</text><text x="0" y="108" font-size="14">😞</text><polyline fill="none" stroke="var(--acc)" stroke-width="2" points="${p.map(x => X(x.t) + ',' + Y(x.v)).join(' ')}"/>${p.map(x => `<circle cx="${X(x.t)}" cy="${Y(x.v)}" r="3" fill="var(--acc)"/>`).join('')}</svg><p class="hint">Promedio por día de los últimos 90 días, solo días con ánimo anotado.</p>`;
+    }
+
+    function fila(e){
+      const d = new Date(e.creada);
+      const f = d.toLocaleDateString('es', {day:'numeric', month:'short', year:'numeric'}), h = d.toLocaleTimeString('es', {hour:'2-digit', minute:'2-digit'});
+      const fecha = `<time datetime="${d.toISOString()}">${f}<br>${h}${e.editada ? '<br>(editada)' : ''}${e.fija ? '<br>Fijada' : ''}</time>`;
+      if(e.id === editId) return `<article class="e" data-id="${e.id}">${fecha}<div><textarea id="ed" aria-label="Editar entrada">${esc(eb.texto)}</textarea><div class="bar"><span>${animoBtns(eb.animo, 'e')}</span><input id="edt" value="${esc(eb.tags)}" aria-label="Etiquetas" placeholder="Etiquetas, separadas por comas" style="flex:1;min-width:160px"></div><div class="f">${fotosHTML(eb.fotos, true)}</div><div class="acts"><button class="main" data-a="ok">Guardar cambios</button><button data-a="no">Cancelar</button></div></div></article>`;
+      const tags = (e.tags || []).map(t => `<button class="chip" data-t="${esc(t)}">${esc(t)}</button>`).join(' ');
+      return `<article class="e" data-id="${e.id}">${fecha}<div>${e.animo ? `<span title="Ánimo ${e.animo} de 5">${AN[e.animo - 1]}</span> ` : ''}<div class="txt">${link(e.texto)}</div><div class="f">${fotosHTML(e.fotos || [], false)}</div>${tags ? `<div class="bar">${tags}</div>` : ''}<div class="acts"><button data-a="fav" aria-label="Favorita">${e.fav ? '★' : '☆'}</button><button data-a="fija">${e.fija ? 'Desfijar' : 'Fijar arriba'}</button><button data-a="ed">Editar</button><button data-a="del">Borrar</button></div></div></article>`;
+    }
+
+    function lista(){
+      const ws = norm(q).split(/\s+/).filter(Boolean);
+      const f = todas.filter(e => {
+        if(solo) return e.id === solo;
+        if(fav && !e.fav) return false;
+        if(tag && !(e.tags || []).includes(tag)) return false;
+        if(an && e.animo != an) return false;
+        if(dia && dk(e.creada) !== dia) return false;
+        const n = norm(e.texto + ' ' + (e.tags || []).join(' '));
+        return ws.every(w => n.includes(w));
+      }).sort((a, b) => (b.fija ? 1 : 0) - (a.fija ? 1 : 0) || b.creada - a.creada);
+      $('#lista').innerHTML = f.length ? f.map(fila).join('')
+        : `<p class="hint">${todas.length ? 'Ninguna entrada coincide con esos filtros.' : 'Todavía no hay entradas. Lo que escribas arriba aparecerá aquí.'}</p>`;
+    }
+    const todo = () => { tg(); cal(); gra(); act(); lista(); };
+
+    function guardar(){
+      const t = $('#nuevo').value.trim();
+      if(!t && !nu.fotos.length) return;
+      if(JSON.stringify(nu.fotos).length > 800000){ $('#err').textContent = 'Las fotos pesan demasiado juntas. Quita alguna.'; return; }
+      const d = {texto: t, creada: Date.now(), tags: pt($('#nt').value), animo: nu.animo, fotos: nu.fotos, fav: false, fija: false};
+      $('#nuevo').value = ''; $('#nt').value = ''; nu = {animo: null, fotos: []}; $('#err').textContent = ''; rn();
+      F.addDoc(C, d).catch(e => { $('#nuevo').value = t; error(e); });
+    }
+
+    rn();
+    $('#gu').onclick = guardar;
+    $('#nuevo').addEventListener('keydown', e => { if((e.ctrlKey || e.metaKey) && e.key === 'Enter') guardar(); });
+    $('#ann').addEventListener('click', e => { const m = e.target.closest('[data-an]'); if(m){ const v = +m.dataset.an; nu.animo = nu.animo === v ? null : v; rn(); } });
+    $('#fv').addEventListener('click', e => { const b = e.target.closest('[data-qf]'); if(b){ nu.fotos.splice(+b.dataset.qf, 1); rn(); } });
+    $('#fo').addEventListener('change', async e => {
+      for(const f of e.target.files){
+        if(nu.fotos.length >= 3){ $('#err').textContent = 'Máximo 3 fotos por entrada.'; break; }
+        try{ nu.fotos.push(await comprimir(f)); }catch(x){ $('#err').textContent = 'No se pudo leer una de las fotos.'; }
+      }
+      e.target.value = ''; rn();
+    });
+    $('#out').onclick = () => F.signOut(auth);
+    $('#bc').onclick = () => { vc = !vc; cal(); };
+    $('#ba').onclick = () => { va = !va; gra(); };
+    $('#bz').onclick = () => { if(todas.length){ solo = todas[Math.floor(Math.random() * todas.length)].id; dia = ''; todo(); } };
+    $('#bk').onclick = () => {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([JSON.stringify(todas, null, 1)], {type: 'application/json'}));
+      a.download = 'diario-' + new Date().toISOString().slice(0, 10) + '.json'; a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    };
+    $('#bd').onclick = async () => {
+      $('#bd').disabled = true; $('#err').textContent = '';
+      try{
+        const p = new F.GoogleAuthProvider(); p.addScope('https://www.googleapis.com/auth/drive.file');
+        const r = await F.reauthenticateWithPopup(auth.currentUser, p);
+        const tk = F.GoogleAuthProvider.credentialFromResult(r).accessToken;
+        const nombre = 'diario-' + new Date().toISOString().slice(0, 10) + '.json';
+        const body = new FormData();
+        body.append('metadata', new Blob([JSON.stringify({name: nombre, mimeType: 'application/json'})], {type: 'application/json'}));
+        body.append('file', new Blob([JSON.stringify(todas)], {type: 'application/json'}));
+        const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {method: 'POST', headers: {Authorization: 'Bearer ' + tk}, body});
+        if(!res.ok){ const j = await res.json().catch(() => ({})); throw new Error((j.error && j.error.message) || res.status); }
+        alert('Copia guardada en tu Drive: ' + nombre);
+      }catch(e){ $('#err').textContent = 'No se pudo guardar en Drive: ' + (e.code || e.message); }
+      $('#bd').disabled = false;
+    };
+    $('#q').addEventListener('input', e => { q = e.target.value; lista(); });
+    $('#bf').onclick = () => { fav = !fav; $('#bf').classList.toggle('on', fav); lista(); };
+    $('#sa').onchange = e => { an = e.target.value; lista(); };
+    $('#act').addEventListener('click', e => { if(e.target.id === 'qd'){ solo = ''; dia = ''; todo(); } });
+    $('#tags').addEventListener('click', e => { const t = e.target.closest('[data-t]'); if(t){ tag = tag === t.dataset.t ? '' : t.dataset.t; todo(); } });
+    $('#cal').addEventListener('click', e => {
+      const m = e.target.closest('[data-m]'), d = e.target.closest('[data-d]');
+      if(m){ mes.setMonth(mes.getMonth() + +m.dataset.m); cal(); }
+      if(d){ dia = dia === d.dataset.d ? '' : d.dataset.d; solo = ''; todo(); }
+    });
+    $('#lista').addEventListener('input', e => { if(e.target.id === 'ed') eb.texto = e.target.value; if(e.target.id === 'edt') eb.tags = e.target.value; });
+    $('#lista').addEventListener('click', e => {
+      const im = e.target.closest('.f img'); if(im){ im.classList.toggle('big'); return; }
+      const t = e.target.closest('[data-t]'); if(t){ tag = tag === t.dataset.t ? '' : t.dataset.t; todo(); return; }
+      const m = e.target.closest('[data-an]'); if(m){ const v = +m.dataset.an; eb.animo = eb.animo === v ? null : v; lista(); return; }
+      const qf = e.target.closest('[data-qf]'); if(qf){ eb.fotos.splice(+qf.dataset.qf, 1); lista(); return; }
+      const b = e.target.closest('button[data-a]'); if(!b) return;
+      const id = b.closest('article').dataset.id, en = todas.find(x => x.id === id), a = b.dataset.a, ref = F.doc(C, id);
+      if(a === 'fav') F.updateDoc(ref, {fav: !en.fav}).catch(error);
+      else if(a === 'fija') F.updateDoc(ref, {fija: !en.fija}).catch(error);
+      else if(a === 'ed'){ editId = id; eb = {texto: en.texto, tags: (en.tags || []).join(', '), animo: en.animo || null, fotos: [...(en.fotos || [])]}; lista(); const x = $('#ed'); if(x) x.focus(); }
+      else if(a === 'no'){ editId = null; lista(); }
+      else if(a === 'ok'){
+        const tx = eb.texto.trim();
+        if(!tx && !eb.fotos.length) return;
+        F.updateDoc(ref, {texto: tx, tags: pt(eb.tags), animo: eb.animo, fotos: eb.fotos, editada: Date.now()}).catch(error);
+        editId = null; todo();
+      }
+      else if(a === 'del'){ if(confirm('¿Borrar esta entrada? No se puede deshacer.')) F.deleteDoc(ref).catch(error); }
+    });
+
+    unsub = F.onSnapshot(F.query(C, F.orderBy('creada', 'desc')), s => {
+      todas = s.docs.map(d => ({id: d.id, ...d.data()}));
+      $('#err').textContent = '';
+      if(editId === null) todo();
+    }, error);
+  }
+}
+
+if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+if(!firebaseConfig.apiKey) guia(); else iniciar();
+</script>
+</body>
+</html>
