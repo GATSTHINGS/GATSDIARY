@@ -48,6 +48,12 @@ button:disabled{opacity:.5;cursor:default}
 .err{color:var(--err);min-height:1.2em;margin:10px 0 0;font-size:.95rem}
 .chip{font-family:var(--mano);font-size:1.25rem;line-height:1.2;border:0;border-radius:2px;padding:0 8px;background:linear-gradient(transparent 38%,var(--hl) 38% 92%,transparent 92%)}
 .chip:hover{background:linear-gradient(transparent 28%,var(--hl) 28%)}
+.chip.add,.chip.add:hover{background:none;border:1px dashed var(--line);border-radius:99px;font-family:var(--serif);font-size:.9rem;padding:2px 12px;color:var(--mute)}
+.chip.add:hover{border-color:var(--mute);color:var(--ink)}
+#nti{font-size:.95rem;padding:2px 4px}
+.gl{list-style:none;padding:0;margin:10px 0 0;max-width:520px}
+.gl li{display:flex;gap:12px;align-items:center;padding:6px 0;border-bottom:1px solid var(--rule)}
+.gl .hint{margin-right:auto}.gl button{font-size:.85rem;padding:3px 10px}
 .chip.on,.chip.on:hover{background:var(--acc);color:var(--acc-ink)}
 .an{padding:3px;border:0;border-radius:50%;line-height:0;color:var(--mute);background:transparent}
 .an svg{width:30px;height:30px;display:block}
@@ -175,19 +181,21 @@ async function iniciar(){
 
   function diario(u){
     const C = F.collection(db, 'usuarios', u.uid, 'entradas');
-    let todas = [], q = '', tag = '', fav = false, an = '', dia = '', solo = '', editId = null, eb = {}, nu = {animo: null, fotos: []}, mes = new Date(), vc = false, va = false;
+    const LR = F.doc(db, 'usuarios', u.uid, 'ajustes', 'etiquetas');
+    let todas = [], q = '', sel = new Set(), etq = [], adding = null, vg = false, fav = false, an = '', dia = '', solo = '', editId = null, eb = {}, nu = {animo: null, fotos: [], tags: []}, mes = new Date(), vc = false, va = false;
     mes.setDate(1);
     let primera = true; const fresh = new Set();
     const hoy = new Date();
     root.innerHTML = `<header><h1>Diario</h1><button id="out">Salir</button></header>
       <section class="e nw"><time>${hoy.toLocaleDateString('es', {weekday:'long'})}<br>${hoy.toLocaleDateString('es', {day:'numeric', month:'long'})}</time><div>
       <textarea id="nuevo" placeholder="Escribe lo que quieras…" aria-label="Nueva entrada"></textarea>
-      <div class="bar"><span id="ann" class="bar" style="margin:0;gap:2px"></span><input id="nt" placeholder="Etiquetas, separadas por comas" aria-label="Etiquetas" style="flex:1;min-width:180px"></div>
+      <div class="bar"><span id="ann" class="bar" style="margin:0;gap:2px"></span></div>
+      <div class="bar" id="pick" role="group" aria-label="Etiquetas"></div>
       <div class="bar"><label class="btn">Añadir fotos<input id="fo" type="file" accept="image/*" multiple hidden></label><span id="fv" class="f" style="margin:0"></span></div>
       <div class="row"><span class="hint">Ctrl + Enter también guarda</span><button class="main" id="gu">Guardar entrada</button></div>
       <p class="err" id="err" role="alert"></p></div></section>
-      <div class="bar tools"><button id="bc">Calendario</button><button id="ba">Gráfico de ánimo</button><button id="bz">Entrada al azar</button><button id="bk">Descargar copia</button><button id="bd">Copia en Drive</button></div>
-      <div id="cal"></div><div id="gra"></div>
+      <div class="bar tools"><button id="bc">Calendario</button><button id="ba">Gráfico de ánimo</button><button id="bg">Etiquetas</button><button id="bz">Entrada al azar</button><button id="bk">Descargar copia</button><button id="bd">Copia en Drive</button></div>
+      <div id="cal"></div><div id="gra"></div><div id="gest"></div>
       <input id="q" type="search" placeholder="Buscar en tus entradas" aria-label="Buscar en tus entradas">
       <div class="bar"><button class="chip" id="bf">★ Favoritas</button><select id="sa" aria-label="Filtrar por ánimo"><option value="">Ánimo: todos</option>${LB.map((e, i) => `<option value="${i + 1}">${e}</option>`).join('')}</select><span id="tags" class="bar" style="margin:0"></span></div>
       <p id="act" class="hint"></p><div id="lista"></div>`;
@@ -197,8 +205,66 @@ async function iniciar(){
       : 'Algo falló: ' + (e.code || e.message); };
 
     const rn = () => { $('#ann').innerHTML = animoBtns(nu.animo, 'n'); $('#fv').innerHTML = fotosHTML(nu.fotos, true); };
-    const tg = () => { const c = {}; todas.forEach(e => (e.tags || []).forEach(t => c[t] = 1));
-      $('#tags').innerHTML = Object.keys(c).sort().map(t => `<button class="chip${tag === t ? ' on' : ''}" data-t="${esc(t)}">${esc(t)}</button>`).join(''); };
+    const limpia = x => String(x).replace(/,/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase().slice(0, 40);
+    const allTags = () => { const c = new Set(etq); todas.forEach(e => (e.tags || []).forEach(t => c.add(t))); return [...c].sort((a, b) => a.localeCompare(b, 'es')); };
+    const chipsPicker = (st, c) => allTags().map(t => `<button type="button" class="chip${st.includes(t) ? ' on' : ''}" data-pt="${esc(t)}" data-c="${c}">${esc(t)}</button>`).join('')
+      + (adding === c ? `<input id="nti" data-c="${c}" placeholder="nueva etiqueta" aria-label="Nueva etiqueta" maxlength="40" style="width:11em">`
+        : `<button type="button" class="chip add" data-addt data-c="${c}">＋ etiqueta</button>`);
+    const rp = c => {
+      const el = c === 'n' ? $('#pick') : $('#pe'); if(!el) return;
+      const x = $('#nti'), v = x && x.dataset.c === c ? x.value : null, f = x && document.activeElement === x;
+      el.innerHTML = chipsPicker(c === 'n' ? nu.tags : eb.tags, c);
+      if(v !== null){ const y = $('#nti'); if(y){ y.value = v; if(f) y.focus(); } }
+    };
+    const toggle = x => sel.has(x) ? sel.delete(x) : sel.add(x);
+    const tg = () => {
+      $('#tags').innerHTML = allTags().map(t => `<button class="chip${sel.has(t) ? ' on' : ''}" data-t="${esc(t)}">${esc(t)}</button>`).join('')
+        + (sel.size ? '<button class="chip add" data-limpia>quitar filtro</button>' : '');
+      rp('n');
+    };
+    const crear = (c, v) => {
+      if(adding !== c) return; adding = null;
+      const t = limpia(v);
+      if(t){
+        if(!allTags().includes(t)){ etq = [...etq, t]; F.setDoc(LR, {lista: F.arrayUnion(t)}, {merge: true}).catch(error); }
+        const a = c === 'n' ? nu.tags : eb.tags; if(!a.includes(t)) a.push(t);
+      }
+      rp(c); tg();
+    };
+    const clickPick = e => {
+      const b = e.target.closest('[data-pt]'), a = e.target.closest('[data-addt]');
+      if(!b && !a) return false;
+      if(b){ const c = b.dataset.c, arr = c === 'n' ? nu.tags : eb.tags, t = b.dataset.pt, i = arr.indexOf(t); if(i < 0) arr.push(t); else arr.splice(i, 1); rp(c); }
+      else { adding = a.dataset.c; rp(adding); const x = $('#nti'); if(x) x.focus(); }
+      return true;
+    };
+    const kdPick = e => {
+      if(e.target.id !== 'nti') return;
+      if(e.key === 'Enter'){ e.preventDefault(); crear(e.target.dataset.c, e.target.value); }
+      else if(e.key === 'Escape'){ const c = e.target.dataset.c; adding = null; rp(c); }
+    };
+    const lote = async pares => { for(let i = 0; i < pares.length; i += 400){ const b = F.writeBatch(db); pares.slice(i, i + 400).forEach(([id, tags]) => b.update(F.doc(C, id), {tags})); await b.commit(); } };
+    const renombrar = t => {
+      const n = limpia(prompt('Nuevo nombre para «' + t + '»:', t) || ''); if(!n || n === t) return;
+      const afect = todas.filter(e => (e.tags || []).includes(t));
+      etq = [...new Set([...etq.filter(x => x !== t), n])];
+      if(sel.delete(t)) sel.add(n);
+      const rn2 = a => [...new Set(a.map(x => x === t ? n : x))]; nu.tags = rn2(nu.tags);
+      Promise.all([lote(afect.map(e => [e.id, rn2(e.tags)])), F.setDoc(LR, {lista: etq})]).catch(error); todo();
+    };
+    const borrarTag = t => {
+      const afect = todas.filter(e => (e.tags || []).includes(t));
+      if(!confirm('¿Borrar «' + t + '»? Se quitará de ' + afect.length + (afect.length === 1 ? ' entrada' : ' entradas') + '. Las entradas no se borran.')) return;
+      sel.delete(t); etq = etq.filter(x => x !== t); nu.tags = nu.tags.filter(x => x !== t);
+      Promise.all([lote(afect.map(e => [e.id, e.tags.filter(x => x !== t)])), F.setDoc(LR, {lista: etq})]).catch(error); todo();
+    };
+    function gest(){
+      const g = $('#gest'); if(!vg){ g.innerHTML = ''; return; }
+      const cn = {}; todas.forEach(e => (e.tags || []).forEach(t => cn[t] = (cn[t] || 0) + 1));
+      const ts = allTags();
+      g.innerHTML = ts.length ? '<ul class="gl">' + ts.map(t => `<li><span class="chip">${esc(t)}</span><span class="hint">${cn[t] || 0} ${cn[t] === 1 ? 'entrada' : 'entradas'}</span><button data-rn="${esc(t)}">Renombrar</button><button data-dl="${esc(t)}">Borrar</button></li>`).join('') + '</ul>'
+        : '<p class="hint">Aún no hay etiquetas. Crea la primera con «＋ etiqueta» al escribir.</p>';
+    }
     const act = () => { $('#act').innerHTML = solo || dia ? `Mostrando ${solo ? 'una entrada al azar' : 'el ' + dl(dia)} <button id="qd">Quitar</button>` : ''; };
 
     function cal(){
@@ -228,7 +294,7 @@ async function iniciar(){
       const d = new Date(e.creada);
       const f = d.toLocaleDateString('es', {day:'numeric', month:'short', year:'numeric'}), h = d.toLocaleTimeString('es', {hour:'2-digit', minute:'2-digit'});
       const fecha = `<time datetime="${d.toISOString()}">${f}<br>${h}${e.editada ? '<br>(editada)' : ''}${e.fija ? '<br>Fijada' : ''}</time>`;
-      if(e.id === editId) return `<article class="e" data-id="${e.id}">${fecha}<div><textarea id="ed" aria-label="Editar entrada">${esc(eb.texto)}</textarea><div class="bar"><span>${animoBtns(eb.animo, 'e')}</span><input id="edt" value="${esc(eb.tags)}" aria-label="Etiquetas" placeholder="Etiquetas, separadas por comas" style="flex:1;min-width:160px"></div><div class="f">${fotosHTML(eb.fotos, true)}</div><div class="acts"><button class="main" data-a="ok">Guardar cambios</button><button data-a="no">Cancelar</button></div></div></article>`;
+      if(e.id === editId) return `<article class="e" data-id="${e.id}">${fecha}<div><textarea id="ed" aria-label="Editar entrada">${esc(eb.texto)}</textarea><div class="bar"><span>${animoBtns(eb.animo, 'e')}</span></div><div class="bar" id="pe" role="group" aria-label="Etiquetas">${chipsPicker(eb.tags, 'e')}</div><div class="f">${fotosHTML(eb.fotos, true)}</div><div class="acts"><button class="main" data-a="ok">Guardar cambios</button><button data-a="no">Cancelar</button></div></div></article>`;
       const tags = (e.tags || []).map(t => `<button class="chip" data-t="${esc(t)}">${esc(t)}</button>`).join(' ');
       return `<article class="e${fresh.has(e.id) ? ' nueva' : ''}" data-id="${e.id}">${fecha}<div>${e.animo ? `<span class="mood" style="color:${CO[e.animo - 1]}" title="Ánimo: ${LB[e.animo - 1]}">${AN[e.animo - 1]}</span>` : ''}<div class="txt">${link(e.texto)}</div><div class="f">${fotosHTML(e.fotos || [], false)}</div>${tags ? `<div class="bar">${tags}</div>` : ''}<div class="acts"><button data-a="fav" aria-label="Favorita">${e.fav ? '★' : '☆'}</button><button data-a="fija">${e.fija ? 'Desfijar' : 'Fijar arriba'}</button><button data-a="ed">Editar</button><button data-a="del">Borrar</button></div></div></article>`;
     }
@@ -238,7 +304,7 @@ async function iniciar(){
       const f = todas.filter(e => {
         if(solo) return e.id === solo;
         if(fav && !e.fav) return false;
-        if(tag && !(e.tags || []).includes(tag)) return false;
+        if(sel.size && !(e.tags || []).some(t => sel.has(t))) return false;
         if(an && e.animo != an) return false;
         if(dia && dk(e.creada) !== dia) return false;
         const n = norm(e.texto + ' ' + (e.tags || []).join(' '));
@@ -247,19 +313,24 @@ async function iniciar(){
       $('#lista').innerHTML = f.length ? f.map(fila).join('')
         : `<p class="hint">${todas.length ? 'Ninguna entrada coincide con esos filtros.' : 'Todavía no hay entradas. Lo que escribas arriba aparecerá aquí.'}</p>`;
     }
-    const todo = () => { tg(); cal(); gra(); act(); lista(); };
+    const todo = () => { tg(); cal(); gra(); gest(); act(); lista(); };
 
     function guardar(){
       const t = $('#nuevo').value.trim();
       if(!t && !nu.fotos.length) return;
       if(JSON.stringify(nu.fotos).length > 800000){ $('#err').textContent = 'Las fotos pesan demasiado juntas. Quita alguna.'; return; }
-      const d = {texto: t, creada: Date.now(), tags: pt($('#nt').value), animo: nu.animo, fotos: nu.fotos, fav: false, fija: false};
-      $('#nuevo').value = ''; $('#nt').value = ''; nu = {animo: null, fotos: []}; $('#err').textContent = ''; rn();
+      const d = {texto: t, creada: Date.now(), tags: [...nu.tags], animo: nu.animo, fotos: nu.fotos, fav: false, fija: false};
+      $('#nuevo').value = ''; nu = {animo: null, fotos: [], tags: []}; adding = null; $('#err').textContent = ''; rn(); rp('n');
       F.addDoc(C, d).catch(e => { $('#nuevo').value = t; error(e); });
     }
 
-    rn();
+    rn(); rp('n');
     $('#gu').onclick = guardar;
+    $('#pick').addEventListener('click', clickPick);
+    $('#pick').addEventListener('keydown', kdPick);
+    $('#lista').addEventListener('keydown', kdPick);
+    $('#bg').onclick = () => { vg = !vg; gest(); };
+    $('#gest').addEventListener('click', e => { const r = e.target.closest('[data-rn]'), d = e.target.closest('[data-dl]'); if(r) renombrar(r.dataset.rn); if(d) borrarTag(d.dataset.dl); });
     $('#nuevo').addEventListener('keydown', e => { if((e.ctrlKey || e.metaKey) && e.key === 'Enter') guardar(); });
     $('#ann').addEventListener('click', e => { const m = e.target.closest('[data-an]'); if(m){ const v = +m.dataset.an; nu.animo = nu.animo === v ? null : v; rn(); } });
     $('#fv').addEventListener('click', e => { const b = e.target.closest('[data-qf]'); if(b){ nu.fotos.splice(+b.dataset.qf, 1); rn(); } });
@@ -300,40 +371,43 @@ async function iniciar(){
     $('#bf').onclick = () => { fav = !fav; $('#bf').classList.toggle('on', fav); lista(); };
     $('#sa').onchange = e => { an = e.target.value; lista(); };
     $('#act').addEventListener('click', e => { if(e.target.id === 'qd'){ solo = ''; dia = ''; todo(); } });
-    $('#tags').addEventListener('click', e => { const t = e.target.closest('[data-t]'); if(t){ tag = tag === t.dataset.t ? '' : t.dataset.t; todo(); } });
+    $('#tags').addEventListener('click', e => { if(e.target.closest('[data-limpia]')){ sel.clear(); todo(); return; } const t = e.target.closest('[data-t]'); if(t){ toggle(t.dataset.t); todo(); } });
     $('#cal').addEventListener('click', e => {
       const m = e.target.closest('[data-m]'), d = e.target.closest('[data-d]');
       if(m){ mes.setMonth(mes.getMonth() + +m.dataset.m); cal(); }
       if(d){ dia = dia === d.dataset.d ? '' : d.dataset.d; solo = ''; todo(); }
     });
-    $('#lista').addEventListener('input', e => { if(e.target.id === 'ed') eb.texto = e.target.value; if(e.target.id === 'edt') eb.tags = e.target.value; });
+    $('#lista').addEventListener('input', e => { if(e.target.id === 'ed') eb.texto = e.target.value; });
     $('#lista').addEventListener('click', e => {
       const im = e.target.closest('.f img'); if(im){ im.classList.toggle('big'); return; }
-      const t = e.target.closest('[data-t]'); if(t){ tag = tag === t.dataset.t ? '' : t.dataset.t; todo(); return; }
+      if(clickPick(e)) return;
+      const t = e.target.closest('[data-t]'); if(t){ toggle(t.dataset.t); todo(); return; }
       const m = e.target.closest('[data-an]'); if(m){ const v = +m.dataset.an; eb.animo = eb.animo === v ? null : v; lista(); return; }
       const qf = e.target.closest('[data-qf]'); if(qf){ eb.fotos.splice(+qf.dataset.qf, 1); lista(); return; }
       const b = e.target.closest('button[data-a]'); if(!b) return;
       const id = b.closest('article').dataset.id, en = todas.find(x => x.id === id), a = b.dataset.a, ref = F.doc(C, id);
       if(a === 'fav') F.updateDoc(ref, {fav: !en.fav}).catch(error);
       else if(a === 'fija') F.updateDoc(ref, {fija: !en.fija}).catch(error);
-      else if(a === 'ed'){ editId = id; eb = {texto: en.texto, tags: (en.tags || []).join(', '), animo: en.animo || null, fotos: [...(en.fotos || [])]}; lista(); const x = $('#ed'); if(x) x.focus(); }
-      else if(a === 'no'){ editId = null; lista(); }
+      else if(a === 'ed'){ editId = id; adding = null; eb = {texto: en.texto, tags: [...(en.tags || [])], animo: en.animo || null, fotos: [...(en.fotos || [])]}; lista(); const x = $('#ed'); if(x) x.focus(); }
+      else if(a === 'no'){ editId = null; adding = null; lista(); }
       else if(a === 'ok'){
         const tx = eb.texto.trim();
         if(!tx && !eb.fotos.length) return;
-        F.updateDoc(ref, {texto: tx, tags: pt(eb.tags), animo: eb.animo, fotos: eb.fotos, editada: Date.now()}).catch(error);
-        editId = null; todo();
+        F.updateDoc(ref, {texto: tx, tags: [...eb.tags], animo: eb.animo, fotos: eb.fotos, editada: Date.now()}).catch(error);
+        editId = null; adding = null; todo();
       }
       else if(a === 'del'){ if(confirm('¿Borrar esta entrada? No se puede deshacer.')) F.deleteDoc(ref).catch(error); }
     });
 
-    unsub = F.onSnapshot(F.query(C, F.orderBy('creada', 'desc')), s => {
+    const u1 = F.onSnapshot(LR, d => { etq = d.exists() ? (d.data().lista || []) : []; if(editId === null) todo(); }, () => {});
+    const u2 = F.onSnapshot(F.query(C, F.orderBy('creada', 'desc')), s => {
       todas = s.docs.map(d => ({id: d.id, ...d.data()}));
       $('#err').textContent = '';
       if(!primera) s.docChanges().forEach(c => { if(c.type === 'added') fresh.add(c.doc.id); });
       primera = false;
       if(editId === null){ todo(); fresh.clear(); }
     }, error);
+    unsub = () => { u1(); u2(); };
   }
 }
 
