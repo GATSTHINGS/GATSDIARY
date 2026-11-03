@@ -54,6 +54,13 @@ button:disabled{opacity:.5;cursor:default}
 .titin{font:italic 500 1.5rem/1.3 var(--serif);border-bottom:1px solid var(--line);margin-bottom:8px}
 .tit{font:italic 500 1.5rem/1.3 var(--serif);margin:0 0 6px}
 .banco{flex-basis:100%;display:flex;flex-wrap:wrap;gap:8px 10px;padding:8px 0 2px;border-top:1px dashed var(--line)}
+.orig{margin:4px 0 2px}
+.orig summary{cursor:pointer;color:var(--mute);font-style:italic;font-size:.92rem}
+.orig .txt{color:var(--mute);margin-top:4px}
+.rv{margin:10px 0;padding:12px 14px;background:var(--tint);border-radius:3px}
+.rv-opc{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center}
+.rv label{display:flex;gap:6px;align-items:center;font-size:.92rem}
+.rv .txt{margin:10px 0 4px}
 .gl{list-style:none;padding:0;margin:10px 0 0;max-width:520px}
 .gl li{display:flex;gap:12px;align-items:center;padding:6px 0;border-bottom:1px solid var(--rule)}
 .gl .hint{margin-right:auto}.gl button{font-size:.85rem;padding:3px 10px}
@@ -110,8 +117,8 @@ h1{font-size:2.3rem}.gran{font-size:3.8rem}
 <body>
 <main id="app"></main>
 <script type="module">
-let firebaseConfig = {};
-try { firebaseConfig = (await import('./config.js')).default || {}; } catch(e) {}
+let firebaseConfig = {}, editorUrl = '';
+try { const cfg = await import('./config.js'); firebaseConfig = cfg.default || {}; editorUrl = cfg.editorUrl || ''; } catch(e) {}
 
 const $ = s => document.querySelector(s);
 const root = $('#app');
@@ -185,7 +192,7 @@ async function iniciar(){
   function diario(u){
     const C = F.collection(db, 'usuarios', u.uid, 'entradas');
     const LR = F.doc(db, 'usuarios', u.uid, 'ajustes', 'etiquetas');
-    let todas = [], q = '', sel = new Set(), etq = [], adding = null, vg = false, fav = false, an = '', dia = '', solo = '', editId = null, eb = {}, nu = {animo: null, fotos: [], tags: []}, mes = new Date(), vc = false, va = false;
+    let todas = [], q = '', sel = new Set(), etq = [], adding = null, vg = false, rev = null, fav = false, an = '', dia = '', solo = '', editId = null, eb = {}, nu = {animo: null, fotos: [], tags: []}, mes = new Date(), vc = false, va = false;
     mes.setDate(1);
     let primera = true; const fresh = new Set();
     const hoy = new Date();
@@ -195,7 +202,8 @@ async function iniciar(){
       <textarea id="nuevo" placeholder="Escribe lo que quieras…" aria-label="Nueva entrada"></textarea>
       <div class="bar"><span id="ann" class="bar" style="margin:0;gap:2px"></span></div>
       <div class="bar" id="pick" role="group" aria-label="Etiquetas"></div>
-      <div class="bar"><label class="btn">Añadir fotos<input id="fo" type="file" accept="image/*" multiple hidden></label><span id="fv" class="f" style="margin:0"></span></div>
+      <div class="bar"><label class="btn">Añadir fotos<input id="fo" type="file" accept="image/*" multiple hidden></label>${editorUrl ? '<button type="button" id="rv">Revisar texto</button>' : ''}<span id="fv" class="f" style="margin:0"></span></div>
+      <div id="rvn"></div>
       <div class="row"><span class="hint">Ctrl + Enter también guarda</span><button class="main" id="gu">Guardar entrada</button></div>
       <p class="err" id="err" role="alert"></p></div></section>
       <div class="bar tools"><button id="bc">Calendario</button><button id="ba">Gráfico de ánimo</button><button id="bg">Etiquetas</button><button id="bz">Entrada al azar</button><button id="bk">Descargar copia</button><button id="bd">Copia en Drive</button></div>
@@ -313,9 +321,9 @@ async function iniciar(){
       const d = new Date(e.creada);
       const f = d.toLocaleDateString('es', {day:'numeric', month:'short', year:'numeric'}), h = d.toLocaleTimeString('es', {hour:'2-digit', minute:'2-digit'});
       const fecha = `<time datetime="${d.toISOString()}">${f}<br>${h}${e.editada ? '<br>(editada)' : ''}${e.fija ? '<br>Fijada' : ''}</time>`;
-      if(e.id === editId) return `<article class="e" data-id="${e.id}">${fecha}<div><input id="edti" class="titin" value="${esc(eb.titulo || '')}" placeholder="Título del día (opcional)" aria-label="Título del día" maxlength="80" autocomplete="off"><textarea id="ed" aria-label="Editar entrada">${esc(eb.texto)}</textarea><div class="bar"><span>${animoBtns(eb.animo, 'e')}</span></div><div class="bar" id="pe" role="group" aria-label="Etiquetas">${chipsPicker(eb.tags, 'e')}</div><div class="f">${fotosHTML(eb.fotos, true)}</div><div class="acts"><button class="main" data-a="ok">Guardar cambios</button><button data-a="no">Cancelar</button></div></div></article>`;
+      if(e.id === editId) return `<article class="e" data-id="${e.id}">${fecha}<div><input id="edti" class="titin" value="${esc(eb.titulo || '')}" placeholder="Título del día (opcional)" aria-label="Título del día" maxlength="80" autocomplete="off"><textarea id="ed" aria-label="Editar entrada">${esc(eb.texto)}</textarea><div id="rve"></div>${eb.original ? `<details class="orig"><summary>Original guardado</summary><div class="txt">${link(eb.original)}</div><div class="acts"><button type="button" data-a="qo">Quitar original</button></div></details>` : ''}<div class="bar"><span>${animoBtns(eb.animo, 'e')}</span></div><div class="bar" id="pe" role="group" aria-label="Etiquetas">${chipsPicker(eb.tags, 'e')}</div><div class="f">${fotosHTML(eb.fotos, true)}</div><div class="acts"><button class="main" data-a="ok">Guardar cambios</button>${editorUrl ? '<button data-a="rv">Revisar texto</button>' : ''}<button data-a="no">Cancelar</button></div></div></article>`;
       const tags = (e.tags || []).map(t => `<button class="chip" data-t="${esc(t)}">${esc(t)}</button>`).join(' ');
-      return `<article class="e${fresh.has(e.id) ? ' nueva' : ''}" data-id="${e.id}">${fecha}<div>${e.titulo ? `<h2 class="tit">${esc(e.titulo)}</h2>` : ''}${e.animo ? `<span class="mood" style="color:${CO[e.animo - 1]}" title="Ánimo: ${LB[e.animo - 1]}">${AN[e.animo - 1]}</span>` : ''}<div class="txt">${link(e.texto)}</div><div class="f">${fotosHTML(e.fotos || [], false)}</div>${tags ? `<div class="bar">${tags}</div>` : ''}<div class="acts"><button data-a="fav" aria-label="Favorita">${e.fav ? '★' : '☆'}</button><button data-a="fija">${e.fija ? 'Desfijar' : 'Fijar arriba'}</button><button data-a="ed">Editar</button><button data-a="del">Borrar</button></div></div></article>`;
+      return `<article class="e${fresh.has(e.id) ? ' nueva' : ''}" data-id="${e.id}">${fecha}<div>${e.titulo ? `<h2 class="tit">${esc(e.titulo)}</h2>` : ''}${e.animo ? `<span class="mood" style="color:${CO[e.animo - 1]}" title="Ánimo: ${LB[e.animo - 1]}">${AN[e.animo - 1]}</span>` : ''}<div class="txt">${link(e.texto)}</div>${e.original ? `<details class="orig"><summary>Ver original${e.revision ? ` (${esc(e.revision)})` : ''}</summary><div class="txt">${link(e.original)}</div></details>` : ''}<div class="f">${fotosHTML(e.fotos || [], false)}</div>${tags ? `<div class="bar">${tags}</div>` : ''}<div class="acts"><button data-a="fav" aria-label="Favorita">${e.fav ? '★' : '☆'}</button><button data-a="fija">${e.fija ? 'Desfijar' : 'Fijar arriba'}</button><button data-a="ed">Editar</button><button data-a="del">Borrar</button></div></div></article>`;
     }
 
     function lista(){
@@ -326,26 +334,79 @@ async function iniciar(){
         if(sel.size && !(e.tags || []).some(t => sel.has(t))) return false;
         if(an && e.animo != an) return false;
         if(dia && dk(e.creada) !== dia) return false;
-        const n = norm((e.titulo || '') + ' ' + e.texto + ' ' + (e.tags || []).join(' '));
+        const n = norm((e.titulo || '') + ' ' + e.texto + ' ' + (e.original || '') + ' ' + (e.tags || []).join(' '));
         return ws.every(w => n.includes(w));
       }).sort((a, b) => (b.fija ? 1 : 0) - (a.fija ? 1 : 0) || b.creada - a.creada);
       $('#lista').innerHTML = f.length ? f.map(fila).join('')
         : `<p class="hint">${todas.length ? 'Ninguna entrada coincide con esos filtros.' : 'Todavía no hay entradas. Lo que escribas arriba aparecerá aquí.'}</p>`;
+      if(rev && rev.c === 'e') rvRender();
     }
     const todo = () => { tg(); cal(); gra(); gest(); act(); lista(); };
+
+    // ---------- Revisión con Gemini (opcional, vía Worker de Cloudflare) ----------
+    let pref = {idioma: 'es', nivel: 'corregir'};
+    try{ Object.assign(pref, JSON.parse(localStorage.getItem('diario-rv') || '{}')); }catch(x){}
+    const rvTa = () => rev && (rev.c === 'n' ? $('#nuevo') : $('#ed'));
+    function rvRender(){
+      const n = $('#rvn'), ed = $('#rve');
+      if(n) n.innerHTML = ''; if(ed) ed.innerHTML = '';
+      const el = rev && (rev.c === 'n' ? n : ed); if(!el) return;
+      const op = (v, t, cur) => `<option value="${v}"${v === cur ? ' selected' : ''}>${t}</option>`;
+      let cuerpo = '';
+      if(rev.estado === 'cargando') cuerpo = '<p class="hint">Revisando…</p>';
+      else if(rev.estado === 'error') cuerpo = `<p class="err" role="alert">${esc(rev.msg)}</p>`;
+      else if(rev.estado === 'listo') cuerpo = `<div class="txt">${esc(rev.resultado)}</div><div class="acts"><button type="button" class="main" data-rv="usar">Usar este texto</button><button type="button" data-rv="desc">Descartar</button></div>`;
+      else if(rev.estado === 'usado') cuerpo = '<p class="hint">Texto reemplazado. Al guardar se conservará también el original.</p><div class="acts"><button type="button" data-rv="undo">Deshacer</button></div>';
+      el.innerHTML = `<div class="rv" role="region" aria-label="Revisión del texto"><div class="rv-opc">
+        <label>Idioma<select data-rv="idioma">${op('es', 'Español', pref.idioma)}${op('pt', 'Português', pref.idioma)}</select></label>
+        <label>Nivel<select data-rv="nivel">${op('corregir', 'Corregir', pref.nivel)}${op('pulir', 'Pulir estilo', pref.nivel)}${op('traducir', 'Solo traducir', pref.nivel)}</select></label>
+        <button type="button" class="main" data-rv="go"${rev.estado === 'cargando' ? ' disabled' : ''}>Revisar</button><button type="button" data-rv="x">Cerrar</button></div>${cuerpo}</div>`;
+    }
+    const abrirRev = c => { rev = {c, estado: 'idle'}; rvRender(); };
+    const msgRev = (x, st) => (x && x.error) || (st === 401 ? 'Sesión no válida. Sal y vuelve a entrar.' : st === 403 ? 'Esta cuenta no tiene permiso para usar el editor.' : st === 429 ? 'Se alcanzó el límite de uso de Gemini. Prueba más tarde.' : st ? 'El editor falló (error ' + st + ').' : 'No se pudo conectar con el editor. Revisa editorUrl en config.js y que el Worker esté desplegado.');
+    async function revisar(){
+      const ta = rvTa(); if(!ta) return;
+      if(!ta.value.trim()){ rev.estado = 'error'; rev.msg = 'Escribe algo primero.'; return rvRender(); }
+      rev.estado = 'cargando'; rev.original = ta.value; rvRender();
+      const r0 = rev;
+      try{
+        const tk = await u.getIdToken();
+        const r = await fetch(editorUrl, {method: 'POST', headers: {'content-type': 'application/json', 'authorization': 'Bearer ' + tk}, body: JSON.stringify({texto: ta.value, idioma: pref.idioma, nivel: pref.nivel})});
+        const d = await r.json().catch(() => ({}));
+        if(rev !== r0) return;
+        if(!r.ok) throw {st: r.status, d};
+        rev.resultado = d.texto; rev.estado = 'listo';
+      }catch(x){ if(rev !== r0) return; rev.estado = 'error'; rev.msg = msgRev(x.d, x.st); }
+      rvRender();
+    }
+    function rvClick(e){
+      const b = e.target.closest('[data-rv]'); if(!b || !rev) return;
+      const k = b.dataset.rv, ta = rvTa();
+      if(k === 'go') revisar();
+      else if(k === 'x' || k === 'desc'){ rev = null; rvRender(); }
+      else if(k === 'usar' && ta){ const o = rev.c === 'n' ? nu : eb; rev.prevOrig = o.original || null; rev.prevNota = o.revision || null; if(!o.original){ o.original = rev.original; o.revision = pref.idioma + ' · ' + pref.nivel; } ta.value = rev.resultado; if(rev.c === 'e') eb.texto = ta.value; rev.estado = 'usado'; rvRender(); ta.focus(); }
+      else if(k === 'undo' && ta){ const o = rev.c === 'n' ? nu : eb; o.original = rev.prevOrig; o.revision = rev.prevNota; ta.value = rev.original; if(rev.c === 'e') eb.texto = ta.value; rev.estado = 'listo'; rvRender(); }
+    }
+    function rvChange(e){
+      const k = e.target.dataset && e.target.dataset.rv; if(k !== 'idioma' && k !== 'nivel') return;
+      pref[k] = e.target.value; try{ localStorage.setItem('diario-rv', JSON.stringify(pref)); }catch(x){}
+    }
 
     function guardar(){
       if(adding === 'n' && $('#nti')) crear('n', $('#nti').value, false);
       const t = $('#nuevo').value.trim(), ti = $('#tit').value.trim();
       if(!t && !ti && !nu.fotos.length) return;
       if(JSON.stringify(nu.fotos).length > 800000){ $('#err').textContent = 'Las fotos pesan demasiado juntas. Quita alguna.'; return; }
-      const d = {titulo: ti, texto: t, creada: Date.now(), tags: [...nu.tags], animo: nu.animo, fotos: nu.fotos, fav: false, fija: false};
-      $('#nuevo').value = ''; $('#tit').value = ''; nu = {animo: null, fotos: [], tags: []}; adding = null; $('#err').textContent = ''; rn(); rp('n');
+      const d = {titulo: ti, texto: t, creada: Date.now(), tags: [...nu.tags], animo: nu.animo, fotos: nu.fotos, fav: false, fija: false, ...(nu.original ? {original: nu.original, revision: nu.revision || ''} : {})};
+      $('#nuevo').value = ''; $('#tit').value = ''; nu = {animo: null, fotos: [], tags: []}; adding = null; $('#err').textContent = ''; rn(); rp('n'); if(rev && rev.c === 'n'){ rev = null; rvRender(); }
       F.addDoc(C, d).catch(e => { $('#nuevo').value = t; $('#tit').value = ti; error(e); });
     }
 
     rn(); rp('n');
     $('#gu').onclick = guardar;
+    if($('#rv')) $('#rv').onclick = () => abrirRev('n');
+    $('#rvn').addEventListener('click', rvClick); $('#rvn').addEventListener('change', rvChange);
+    $('#lista').addEventListener('click', rvClick); $('#lista').addEventListener('change', rvChange);
     $('#tit').addEventListener('keydown', e => { if(e.key === 'Enter'){ e.preventDefault(); $('#nuevo').focus(); } });
     $('#pick').addEventListener('click', clickPick);
     $('#pick').addEventListener('keydown', kdPick);
@@ -411,14 +472,16 @@ async function iniciar(){
       const id = b.closest('article').dataset.id, en = todas.find(x => x.id === id), a = b.dataset.a, ref = F.doc(C, id);
       if(a === 'fav') F.updateDoc(ref, {fav: !en.fav}).catch(error);
       else if(a === 'fija') F.updateDoc(ref, {fija: !en.fija}).catch(error);
-      else if(a === 'ed'){ editId = id; adding = null; eb = {titulo: en.titulo || '', texto: en.texto, tags: [...(en.tags || [])], animo: en.animo || null, fotos: [...(en.fotos || [])]}; lista(); const x = $('#ed'); if(x) x.focus(); }
-      else if(a === 'no'){ editId = null; adding = null; lista(); }
+      else if(a === 'ed'){ editId = id; adding = null; if(rev && rev.c === 'e') rev = null; eb = {titulo: en.titulo || '', texto: en.texto, tags: [...(en.tags || [])], animo: en.animo || null, fotos: [...(en.fotos || [])], original: en.original || null, revision: en.revision || null}; lista(); const x = $('#ed'); if(x) x.focus(); }
+      else if(a === 'rv') abrirRev('e');
+      else if(a === 'qo'){ if(confirm('¿Quitar el original guardado? No se puede deshacer una vez guardes.')){ eb.original = null; eb.revision = null; lista(); } }
+      else if(a === 'no'){ editId = null; adding = null; if(rev && rev.c === 'e') rev = null; lista(); }
       else if(a === 'ok'){
         if(adding === 'e' && $('#nti')) crear('e', $('#nti').value, false);
         const tx = eb.texto.trim(), ti = (eb.titulo || '').trim();
         if(!tx && !ti && !eb.fotos.length) return;
-        F.updateDoc(ref, {titulo: ti, texto: tx, tags: [...eb.tags], animo: eb.animo, fotos: eb.fotos, editada: Date.now()}).catch(error);
-        editId = null; adding = null; todo();
+        F.updateDoc(ref, {titulo: ti, texto: tx, tags: [...eb.tags], animo: eb.animo, fotos: eb.fotos, original: eb.original || null, revision: eb.original ? (eb.revision || '') : null, editada: Date.now()}).catch(error);
+        editId = null; adding = null; if(rev && rev.c === 'e') rev = null; todo();
       }
       else if(a === 'del'){ if(confirm('¿Borrar esta entrada? No se puede deshacer.')) F.deleteDoc(ref).catch(error); }
     });

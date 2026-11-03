@@ -7,3 +7,8 @@ export default {
   messagingSenderId: "347667039204",
   appId: "1:347667039204:web:c01f2165700ff951037df1"
 };
+
+// Editor de textos con Gemini (opcional). Déjalo vacío para no usarlo.
+// Cuando despliegues el Worker de Cloudflare (carpeta cloudflare/), pega aquí su URL, por ejemplo:
+// export const editorUrl = 'https://gatsdiary-editor.TUUSUARIO.workers.dev';
+export const editorUrl = 'https://black-snow-0cad.guimesot.workers.dev';
